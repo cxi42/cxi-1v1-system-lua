@@ -1,3 +1,5 @@
+--This is I xiaa_fr on roblox or cmcln on discord script for my 1v1 gamemode on my linked game
+
 -- Service
 -- Core systems used for players, networking, updates, and effects
 local Players = game:GetService("Players")
