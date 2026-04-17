@@ -1,6 +1,5 @@
---This is I, xiaa_fr on roblox or cmcln on discord roblox script, I made this in my 1v1 gamemode on my game linked.
-
 -- Service
+-- Core systems used for players, networking, updates, and effects
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SoundService = game:GetService("SoundService")
@@ -9,11 +8,13 @@ local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
 
 -- Remotes
+-- Used for client to server communication, but always validated on server
 local JoinMatch = ReplicatedStorage:WaitForChild("JoinMatch")
 local KnockedOff = ReplicatedStorage:WaitForChild("PlayerKnockedOff")
 local WinnerAnnounce = ReplicatedStorage:WaitForChild("WinnerAnnounce")
 
 -- Stage
+-- Parts in the map that control joining and player positioning
 local Stage = script.Parent
 local Plate1 = Stage.Plate1
 local Plate2 = Stage.Plate2
@@ -26,6 +27,7 @@ local KnockbackUp = 35
 local CooldownTime = 1.5
 
 -- States
+-- Simple state system to control match flow
 local States = {
 	Waiting = 1,
 	Countdown = 2,
@@ -33,17 +35,18 @@ local States = {
 }
 
 -- Plate storage
+-- Keeps track of which players are waiting to fight
 local PlatePlayers = {
 	[Plate1] = nil,
 	[Plate2] = nil
 }
 
--- Matches container
--- Allows scaling beyond a single match if more arenas are added later
+-- Matches
+-- Stores all active matches so system can scale later
 local Matches = {}
 
 -- Utility
-
+-- Helper functions to safely get character parts
 local function GetCharacter(player)
 	return player.Character
 end
@@ -67,12 +70,16 @@ local function TweenPart(part, goal)
 	tween:Play()
 end
 
+-- Player control
+-- Freezing uses anchoring so players cannot move during countdown
 local function Freeze(player, state)
 	local hrp = GetHRP(player)
 	if not hrp then return end
 	hrp.Anchored = state
 end
 
+-- Teleport
+-- Adds small randomness so players don’t overlap
 local function Teleport(player)
 	local hrp = GetHRP(player)
 	if not hrp then return end
@@ -87,7 +94,7 @@ local function Teleport(player)
 end
 
 -- Combat
-
+-- Handles hit cooldown and knockback logic
 local Combat = {}
 Combat.__index = Combat
 
@@ -107,8 +114,7 @@ function Combat:RegisterHit(player)
 	self.Cooldowns[player] = os.clock()
 end
 
--- Directional combat instead of proximity spam
--- Requires player to actually face opponent
+-- Apply knockback only if attacker is facing target
 function Combat:Apply(attacker, target)
 	if not self:CanHit(attacker) then return end
 
@@ -118,8 +124,6 @@ function Combat:Apply(attacker, target)
 
 	local direction = (tHRP.Position - aHRP.Position).Unit
 	local facingDot = aHRP.CFrame.LookVector:Dot(direction)
-
-	-- Only apply if facing target
 	if facingDot < 0.5 then return end
 
 	self:RegisterHit(attacker)
@@ -129,7 +133,7 @@ function Combat:Apply(attacker, target)
 end
 
 -- Match
-
+-- Controls a full 1v1 game between two players
 local Match = {}
 Match.__index = Match
 
@@ -150,6 +154,7 @@ function Match.new(p1, p2)
 	return self
 end
 
+-- Countdown before round starts so both players are ready
 function Match:Countdown()
 	self.State = States.Countdown
 
@@ -161,6 +166,7 @@ function Match:Countdown()
 	end
 end
 
+-- Starts a round by resetting players and enabling movement
 function Match:StartRound()
 	self.Round += 1
 	self.State = States.InRound
@@ -178,6 +184,7 @@ function Match:StartRound()
 	end
 end
 
+-- Gives a point and checks if match should end
 function Match:Point(winner)
 	self.Scores[winner.UserId] += 1
 
@@ -191,10 +198,10 @@ function Match:Point(winner)
 	self:StartRound()
 end
 
+-- Ends match and makes sure players are not stuck frozen
 function Match:End()
 	self.State = States.Waiting
 
-	-- Ensure players are unfrozen
 	for _,plr in ipairs(self.Players) do
 		if plr then
 			Freeze(plr, false)
@@ -204,6 +211,7 @@ function Match:End()
 	table.clear(self.Players)
 end
 
+-- Runs during match to check for combat
 function Match:Update(dt)
 	if self.State ~= States.InRound then return end
 
@@ -228,7 +236,7 @@ function Match:Update(dt)
 end
 
 -- Plate logic
-
+-- Assigns players to open slots
 local function AssignPlayer(player)
 	if not PlatePlayers[Plate1] then
 		PlatePlayers[Plate1] = player
@@ -248,6 +256,7 @@ local function RemovePlayer(player)
 	end
 end
 
+-- Starts a match when both slots are filled
 local function TryStart()
 	local p1 = PlatePlayers[Plate1]
 	local p2 = PlatePlayers[Plate2]
@@ -267,12 +276,12 @@ JoinMatch.OnServerEvent:Connect(function(player)
 	end
 end)
 
+-- Validates that player actually lost instead of trusting client
 KnockedOff.OnServerEvent:Connect(function(player)
 	for _,match in ipairs(Matches) do
 		local p1 = match.Players[1]
 		local p2 = match.Players[2]
 
-		-- Validation: must be in match
 		if player ~= p1 and player ~= p2 then continue end
 
 		local hrp = GetHRP(player)
@@ -286,6 +295,7 @@ KnockedOff.OnServerEvent:Connect(function(player)
 	end
 end)
 
+-- Cleans up if player leaves mid match
 Players.PlayerRemoving:Connect(function(player)
 	RemovePlayer(player)
 
@@ -296,6 +306,7 @@ Players.PlayerRemoving:Connect(function(player)
 	end
 end)
 
+-- Main loop for updating matches
 RunService.Heartbeat:Connect(function(dt)
 	for _,match in ipairs(Matches) do
 		match:Update(dt)
@@ -303,7 +314,7 @@ RunService.Heartbeat:Connect(function(dt)
 end)
 
 -- Visual pulse
-
+-- Makes plates feel active instead of static
 local function PulsePlate(plate)
 	if not plate:IsA("BasePart") then return end
 	TweenPart(plate, {Transparency = 0.3})
@@ -320,7 +331,7 @@ task.spawn(function()
 end)
 
 -- Cleanup loop
-
+-- Removes invalid players from plates
 task.spawn(function()
 	while true do
 		for player,_ in pairs(PlatePlayers) do
